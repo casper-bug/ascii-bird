@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASCII-Bird</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Courier New', monospace;
+            background-color: black;
+            color: white;
+            overflow: hidden;
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #game-screen {
+            white-space: pre;
+            line-height: 1;
+            font-size: 14px;
+        }
+        @media (min-width: 768px) {
+            #game-screen {
+                font-size: 16px;
+            }
+        }
+        #header {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 10px;
+            display: flex;
+            justify-content: space-between;
+            font-weight: bold;
+        }
+        #title {
+            text-align: left;
+        }
+        #scores {
+            text-align: right;
+        }
+        #message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            font-size: 1.5em;
+            font-weight: bold;
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            border: 1px solid white;
+            padding: 20px;
+            border-radius: 5px;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="header">
+            <div id="title">ASCII-BIRD</div>
+            <div id="scores">SCORE: 0 | HIGH: 0</div>
+        </div>
+        <div id="game-screen"></div>
+        <div id="message">CLICK TO START</div>
+    </div>
+
+    <script>
+        // Game characters
+        const PLAYER_BIRD = ['~>Ö>', '~>ö>'];  // Bird animation frames
+        const OBSTACLE_PIPE_TOP = ['╔═╗', '║░║', '║▒║', '║▓║', '║█║'];  // Top pipe texture (varied)
+        const OBSTACLE_PIPE_BODY = ['║░║', '║▒║', '║▓║', '║█║', '║░║'];  // Pipe body texture (varied)
+        const OBSTACLE_PIPE_CAP = '╚═╝';  // Bottom cap of top pipe
+        const OBSTACLE_PIPE_TOP_CAP = '╔═╗';  // Top cap of bottom pipe
+        const TERRAIN_GROUND = '▁▂▃▄▅▆▇█';  // Varied ground texture
+        const EMPTY_SKY = ' ';  // Sky remains empty
+        
+        // Game state
+        let canvasWidth, canvasHeight;
+        let player = { 
+            position: { x: 0, y: 0 }, 
+            jumpVelocity: 0 
+        };
+        let obstacles = [];
+        let tick = 0;
+        let playerScore = 0;
+        let bestScore = 0;
+        let isGameActive = false;
+        let isGameEnded = false;
+        let gameRefreshRate = 50; // Milliseconds between frames
+        let currentLevel = 1; // Difficulty level
+        
+        // DOM elements
+        const gameCanvas = document.getElementById('game-screen');
+        const gameMessage = document.getElementById('message');
+        const scoreDisplay = document.getElementById('scores');
+        
+        // Initialize the game dimensions
+        function updateGameDimensions() {
+            resizeGameCanvas();
+            // If game is running, render the updated game world
+            if (isGameActive) {
+                renderGameWorld();
+            }
+        }
+        
+        // Initialize the game world
+        function startNewGame() {
+            // Set up the game canvas dimensions
+            resizeGameCanvas();
+            
+            // Position the player bird
+            player.position.x = Math.floor(canvasWidth / 4);
+            player.position.y = Math.floor(canvasHeight / 2);
+            player.jumpVelocity = 0;
+            
+            // Clear any existing obstacles
+            obstacles = [];
+            
+            // Reset game progress
+            playerScore = 0;
+            currentLevel = 1;
+            gameRefreshRate = 50;
+            updateScoreDisplay();
+            
+            // Hide the message
+            gameMessage.style.display = 'none';
+            
+            // Begin the game cycle
+            if (!isGameActive) {
+                isGameActive = true;
+                isGameEnded = false;
+                runGameLoop();
+            }
+        }
+        
+        // Handle screen size changes
+        function resizeGameCanvas() {
+            // Determine optimal text size for current screen
+            const fontSize = window.innerWidth < 768 ? 14 : 16;
+            canvasWidth = Math.floor(window.innerWidth / (fontSize * 0.6));
+            canvasHeight = Math.floor(window.innerHeight / fontSize) - 2; // Leave space for header
+            
+            // Ensure minimum playable area
+            canvasWidth = Math.max(canvasWidth, 20);
+            canvasHeight = Math.max(canvasHeight, 10);
+        }
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            updateGameDimensions();
+        });
+        
+        // Render the game world
+        function renderGameWorld() {
+            let displayBuffer = '';
+            
+            // Build the visual representation row by row
+            for (let y = 0; y < canvasHeight; y++) {
+                for (let x = 0; x < canvasWidth; x++) {
+                    // Draw the ground at the bottom
+                    if (y === canvasHeight - 1) {
+                        // Use varied ground textures based on position
+                        const groundIndex = (x + tick) % TERRAIN_GROUND.length;
+                        displayBuffer += TERRAIN_GROUND[groundIndex];
+                    } 
+                    // Draw obstacles (pipes) with more detail
+                    else if (isPipeAt(x, y)) {
+                        // Get pipe details for rendering
+                        const pipeDetails = getPipeDetailsAt(x, y);
+                        displayBuffer += pipeDetails;
+                    }
+                    // Draw the player bird with animation
+                    else if (x === player.position.x && y === Math.floor(player.position.y)) {
+                        // Animate bird based on game tick and velocity
+                        const birdFrame = (tick % 6 < 3) ? 0 : 1;
+                        // Adjust bird appearance based on velocity (diving or climbing)
+                        displayBuffer += PLAYER_BIRD[birdFrame];
+                    }
+                    // Fill remaining space with sky
+                    else {
+                        displayBuffer += EMPTY_SKY;
+                    }
+                }
+                // End of row
+                displayBuffer += '\n';
+            }
+            
+            // Update the visual display
+            gameCanvas.textContent = displayBuffer;
+        }
+        
+        // Get detailed pipe textures for a specific position
+        function getPipeDetailsAt(x, y) {
+            for (const obstacle of obstacles) {
+                if (x === obstacle.x) {
+                    // Top pipe section
+                    if (y < obstacle.gapStart) {
+                        // If at the bottom of top pipe (cap)
+                        if (y === obstacle.gapStart - 1) {
+                            return OBSTACLE_PIPE_CAP;
+                        }
+                        // If at the top edge of the screen (top cap)
+                        else if (y === 0) {
+                            return OBSTACLE_PIPE_TOP[0];
+                        }
+                        // Pipe body with varied texture based on position
+                        else {
+                            const textureIndex = (y + x) % OBSTACLE_PIPE_BODY.length;
+                            return OBSTACLE_PIPE_BODY[textureIndex];
+                        }
+                    }
+                    // Bottom pipe section
+                    else if (y > obstacle.gapStart + obstacle.gapSize) {
+                        // If at the top of bottom pipe (cap)
+                        if (y === obstacle.gapStart + obstacle.gapSize + 1) {
+                            return OBSTACLE_PIPE_TOP_CAP;
+                        }
+                        // Pipe body with varied texture
+                        else {
+                            const textureIndex = (y + x) % OBSTACLE_PIPE_BODY.length;
+                            return OBSTACLE_PIPE_BODY[textureIndex];
+                        }
+                    }
+                }
+            }
+            return EMPTY_SKY;
+        }
+        
+        // Check if there's a pipe at the given position
+        function isPipeAt(x, y) {
+            for (const obstacle of obstacles) {
+                if (x === obstacle.x) {
+                    // Position is within pipe if it's outside the gap
+                    return y < obstacle.gapStart || y > obstacle.gapStart + obstacle.gapSize;
+                }
+            }
+            return false;
+        }
+        
+        // Check if there's an obstacle at the given position (used for collision detection)
+        function isObstacleAt(x, y) {
+            for (const obstacle of obstacles) {
+                if (x === obstacle.x || x === obstacle.x - 1) {
+                    // Position is within pipe if it's outside the gap
+                    return y < obstacle.gapStart || y > obstacle.gapStart + obstacle.gapSize;
+                }
+            }
+            return false;
+        }
+        
+        // Update game physics and state
+        function updateGameState() {
+            // Apply gravity to player
+            player.jumpVelocity += 0.5; 
+            player.position.y += player.jumpVelocity / 5;
+            
+            // Generate new obstacles based on difficulty
+            const obstacleInterval = Math.max(40 - currentLevel * 2, 20);
+            if (tick % obstacleInterval === 0) {
+                // Gap size decreases with difficulty (to a minimum)
+                const minGapSize = Math.max(7 - Math.floor(currentLevel / 2), 4);
+                
+                // Ensure gap position is reasonable for navigation
+                const maxGapStart = canvasHeight - minGapSize - 3;
+                let gapStart = Math.floor(Math.random() * maxGapStart) + 1;
+                
+                // Set minimum clearance from edges
+                gapStart = Math.max(1, Math.min(gapStart, canvasHeight - minGapSize - 2));
+                
+                // Add the new obstacle
+                obstacles.push({
+                    x: canvasWidth,
+                    gapStart: gapStart,
+                    gapSize: minGapSize,
+                    passed: false
+                });
+            }
+            
+            // Move and process all obstacles
+            for (let i = 0; i < obstacles.length; i++) {
+                const obstacle = obstacles[i];
+                
+                // Speed increases with difficulty (capped for playability)
+                const obstacleSpeed = Math.min(Math.max(1, Math.floor(currentLevel / 3)), 3);
+                obstacle.x -= obstacleSpeed;
+                
+                // Award points for successful navigation
+                if (!obstacle.passed && obstacle.x < player.position.x) {
+                    obstacle.passed = true;
+                    playerScore++;
+                    updateScoreDisplay();
+                    
+                    // Increase challenge every few points
+                    if (playerScore % 5 === 0 && playerScore > 0) {
+                        currentLevel++;
+                        // Speed up gameplay slightly
+                        gameRefreshRate = Math.max(gameRefreshRate - 2, 20);
+                    }
+                }
+                
+                // Remove obstacles that have moved offscreen
+                if (obstacle.x < 0) {
+                    obstacles.splice(i, 1);
+                    i--;
+                }
+            }
+            
+            // Ensure obstacles create fair paths
+            ensureNavigablePath();
+            
+            // Detect collisions
+            if (detectCollision()) {
+                isGameActive = false;
+                isGameEnded = true;
+                
+                // Update high score if needed
+                if (playerScore > bestScore) {
+                    bestScore = playerScore;
+                    updateScoreDisplay();
+                }
+                
+                // Show end-game message
+                gameMessage.textContent = 'GAME OVER\nCLICK TO RETRY';
+                gameMessage.style.display = 'block';
+            }
+            
+            tick++;
+        }
+        
+        // Make sure consecutive obstacles can be navigated through
+        function ensureNavigablePath() {
+            if (obstacles.length < 2) return;
+            
+            for (let i = 0; i < obstacles.length - 1; i++) {
+                const current = obstacles[i];
+                const next = obstacles[i + 1];
+                
+                // Only adjust obstacles that are close to each other
+                const proximityThreshold = 10;
+                if (next.x - current.x > proximityThreshold) continue;
+                
+                // Check for navigability between gaps
+                const currentGapBottom = current.gapStart + current.gapSize;
+                const nextGapBottom = next.gapStart + next.gapSize;
+                
+                // If gaps don't overlap at all, adjust the next obstacle
+                if (current.gapStart > nextGapBottom || currentGapBottom < next.gapStart) {
+                    // Create partial overlap with current gap
+                    next.gapStart = Math.max(1, Math.min(current.gapStart - 1, canvasHeight - next.gapSize - 2));
+                }
+            }
+        }
+        
+        // Detect player collisions with obstacles or boundaries
+        function detectCollision() {
+            const playerY = Math.floor(player.position.y);
+            
+            // Check for ground collision
+            if (playerY >= canvasHeight - 1) {
+                return true;
+            }
+            
+            // Check for ceiling collision
+            if (playerY < 0) {
+                return true;
+            }
+            
+            // Check for obstacle collisions
+            for (const obstacle of obstacles) {
+                // Check if player is at the same x-position as an obstacle
+                if ((obstacle.x === player.position.x || obstacle.x - 1 === player.position.x)) {
+                    // Check if player is outside the gap (collision)
+                    if (playerY < obstacle.gapStart || playerY > obstacle.gapStart + obstacle.gapSize) {
+                        return true;
+                    }
+                }
+            }
+            
+            // No collisions detected
+            return false;
+        }
+        
+        // Update the score display
+        function updateScoreDisplay() {
+            scoreDisplay.textContent = `SCORE: ${playerScore} | HIGH: ${bestScore}`;
+        }
+        
+        // Main game loop
+        function runGameLoop() {
+            if (!isGameActive) return;
+            
+            updateGameState();
+            renderGameWorld();
+            
+            // Schedule next frame with variable timing based on difficulty
+            setTimeout(() => {
+                requestAnimationFrame(runGameLoop);
+            }, gameRefreshRate);
+        }
+        
+        // Handle input (click/tap/keyboard)
+        function handleInput() {
+            if (!isGameActive) {
+                // Start or restart game
+                startNewGame();
+            } else {
+                // Make the bird jump/flap with more dynamic feel
+                // Adjust jump strength based on current level (harder levels = weaker jumps)
+                const levelFactor = Math.max(0.8, 1 - (currentLevel * 0.03));
+                player.jumpVelocity = -3.0 * levelFactor;
+                
+                // Flash effect or animation could be added here
+            }
+        }
+        
+        // Event listeners
+        document.addEventListener('click', handleInput);
+        document.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            handleInput();
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' || e.key === ' ' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                handleInput();
+            }
+        });
+        
+        // Initial setup
+        updateGameDimensions();
+        renderGameWorld();
+    </script>
+</body>
+</html>
