@@ -1,4 +1,4 @@
- <!DOCTYPE html>
+  <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -66,6 +66,8 @@
             padding: 25px;
             border-radius: 5px;
             z-index: 10;
+            width: 80%;
+            max-width: 300px;
         }
         
         /* CRT and Grain Effects */
@@ -179,6 +181,28 @@
             pointer-events: none;
             z-index: 7;
         }
+
+        /* Mute Button */
+        #mute-button {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            background-color: transparent;
+            border: 1px solid #ffffff;
+            border-radius: 3px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            color: white;
+            text-shadow: 0 0 5px rgba(0, 255, 0, 0.7);
+            z-index: 10;
+            transition: all 0.3s;
+        }
+        
+        #mute-button:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
     </style>
 </head>
 <body>
@@ -199,6 +223,9 @@
         <div class="crt-flicker"></div>
         <div class="grain"></div>
         <div class="vignette"></div>
+
+        <!-- Mute Button -->
+        <button id="mute-button">MUTE</button>
     </div>
 
     <script>
@@ -230,6 +257,58 @@
         let gameRefreshRate = 50; // Milliseconds between frames
         let gameSpeed = 1; // Base game speed multiplier
         
+        // Web Audio API setup
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        let isMuted = false;
+
+        // Function to generate a bleep sound
+        function playBleep() {
+            if (isMuted) return;
+
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            // Configure the oscillator
+            oscillator.type = 'sine'; // Softer sound
+            oscillator.frequency.setValueAtTime(440, audioContext.currentTime); // Higher frequency for better audibility
+
+            // Configure the gain (volume)
+            gainNode.gain.setValueAtTime(0.5, audioContext.currentTime); // Increased volume
+            gainNode.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.1); // Fade out quickly
+
+            // Connect the oscillator to the gain node and the gain node to the audio context's destination
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            // Start and stop the oscillator
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + 0.1); // Stop after 0.1 seconds
+        }
+
+        // Function to generate a blorp sound
+        function playBlorp() {
+            if (isMuted) return;
+
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            // Configure the oscillator
+            oscillator.type = 'triangle'; // Softer sound
+            oscillator.frequency.setValueAtTime(220, audioContext.currentTime); // Lower frequency for blorp
+
+            // Configure the gain (volume)
+            gainNode.gain.setValueAtTime(0.8, audioContext.currentTime); // Increased volume
+            gainNode.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.3); // Fade out slowly
+
+            // Connect the oscillator to the gain node and the gain node to the audio context's destination
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            // Start and stop the oscillator
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + 0.3); // Stop after 0.3 seconds
+        }
+
         // Safe localStorage wrapper function
         function safeLocalStorage() {
             let data = {};
@@ -263,7 +342,14 @@
         const gameCanvas = document.getElementById('game-screen');
         const gameMessage = document.getElementById('message');
         const scoreDisplay = document.getElementById('scores');
+        const muteButton = document.getElementById('mute-button');
         
+        // Mute button functionality
+        muteButton.addEventListener('click', () => {
+            isMuted = !isMuted;
+            muteButton.textContent = isMuted ? 'UNMUTE' : 'MUTE';
+        });
+
         // Initialize the game dimensions
         function updateGameDimensions() {
             resizeGameCanvas();
@@ -518,6 +604,9 @@
                 isGameActive = false;
                 isGameEnded = true;
                 
+                // Play blorp sound on collision
+                playBlorp();
+                
                 // Update high score if needed
                 if (playerScore > bestScore) {
                     bestScore = playerScore;
@@ -582,6 +671,9 @@
         
         // Handle input (click/tap/keyboard)
         function handleInput() {
+            // Play the bleep sound
+            playBleep();
+
             // Make the bird jump by giving it upward velocity
             player.jumpVelocity = -3.5;
             
